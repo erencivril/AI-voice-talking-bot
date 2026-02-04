@@ -9,6 +9,7 @@ import discord
 from src.admin.commands import handle_owner_command
 from src.bot.permissions import is_owner
 from src.ai.prompt_builder import build_prompt
+from src.tools.tool_calls import parse_tool_call
 
 
 logger = logging.getLogger(__name__)
@@ -115,6 +116,9 @@ async def handle_message(bot: discord.Client, message: discord.Message) -> None:
         except Exception:
             logger.exception("get_prompt_memories failed")
 
+    features = getattr(bot, "features", {})
+    web_enabled = bool(features.get("web_search", False)) if isinstance(features, dict) else False
+
     prompt = build_prompt(
         bot_name=settings.bot_name,
         owner_id=settings.discord_owner_id,
@@ -122,16 +126,59 @@ async def handle_message(bot: discord.Client, message: discord.Message) -> None:
         user_message=user_text,
         is_owner=user_is_owner,
         memories=memories,
+        tool_instructions=(
+            "Kullanabileceğin tek tool: web_search.\n"
+            "Eğer güncel bilgi gerekiyorsa SADECE şu JSON'u döndür:\n"
+            "{\"tool\":\"web_search\",\"query\":\"...\"}\n"
+            "Aksi halde normal cevap ver."
+        )
+        if web_enabled
+        else None,
     )
 
     try:
-        reply = await bot.ai.generate_text(prompt=prompt)  # type: ignore[union-attr]
+        draft = await bot.ai.generate_text(prompt=prompt)  # type: ignore[union-attr]
     except Exception:
         await message.reply("Şu an kafam yandı. Biraz sonra dene.", mention_author=False)
         return
 
-    if not reply:
-        reply = "Cevap üretemedim. (Bence bu da bir cevap.)"
+    reply = draft or "Cevap üretemedim. (Bence bu da bir cevap.)"
+
+    tool_call = parse_tool_call(draft) if web_enabled else None
+    if tool_call and tool_call.tool == "web_search":
+        query = tool_call.query[:200]
+        web = getattr(bot, "web_search", None)
+        if web:
+            try:
+                results = await web.search(query=query, limit=5)
+            except Exception:
+                logger.exception("web_search failed")
+                results = []
+        else:
+            results = []
+
+        if results:
+            lines = []
+            for i, r in enumerate(results, start=1):
+                snippet = (r.snippet or "").replace("\n", " ").strip()
+                snippet = snippet[:160] + ("…" if len(snippet) > 160 else "")
+                lines.append(f"{i}. {r.title} — {snippet} ({r.url})")
+
+            prompt2 = build_prompt(
+                bot_name=settings.bot_name,
+                owner_id=settings.discord_owner_id,
+                user_display_name=getattr(message.author, "display_name", "kullanıcı"),
+                user_message=f"{user_text}\n\nNot: WEB_SEARCH_RESULTS'e dayanarak cevapla.",
+                is_owner=user_is_owner,
+                memories=memories,
+                web_results=lines,
+            )
+            try:
+                reply2 = await bot.ai.generate_text(prompt=prompt2)  # type: ignore[union-attr]
+                if reply2.strip():
+                    reply = reply2.strip()
+            except Exception:
+                logger.exception("Gemini answer after web search failed")
 
     await message.reply(reply, mention_author=False)
 

@@ -13,6 +13,7 @@ from src.config import Settings
 from src.bot.rate_limiter import RateLimiter
 from src.memory.database import Database
 from src.memory.user_memory import UserMemoryManager
+from src.tools.web_search import WebSearch
 
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,11 @@ class DiscordAIBot(discord.Client):
             window_seconds=float(settings.rate_limit_window_seconds),
         )
         self.features = {"web_search": settings.enable_web_search, "voice": settings.enable_voice}
+        self.web_search = WebSearch(
+            brave_api_key=settings.brave_api_key,
+            serper_api_key=settings.serper_api_key,
+            tavily_api_key=settings.tavily_api_key,
+        )
 
         if settings.google_api_key:
             self.ai = GeminiClient(api_key=settings.google_api_key, model_name=settings.gemini_model)

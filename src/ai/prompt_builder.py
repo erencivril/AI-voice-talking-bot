@@ -32,6 +32,8 @@ def build_prompt(
     user_message: str,
     is_owner: bool,
     memories: list[str] | None = None,
+    tool_instructions: str | None = None,
+    web_results: list[str] | None = None,
 ) -> str:
     prompts = load_prompts()
 
@@ -47,12 +49,16 @@ def build_prompt(
     )
 
     memories_block = "\n".join(memories or []) or "- (yok)"
+    tools_block = tool_instructions.strip() if tool_instructions else ""
+    web_block = "\n".join(web_results or [])
 
     return (
         f"[SYSTEM]\n{system}\n\n"
         f"[PERSONALITY]\n{personality}\n\n"
         f"{owner_rules}"
+        f"{('[TOOLS]\\n' + tools_block + '\\n\\n') if tools_block else ''}"
         f"[MEMORIES]\n{memories_block}\n\n"
+        f"{('[WEB_SEARCH_RESULTS]\\n' + web_block + '\\n\\n') if web_block else ''}"
         f"[USER]\nAd: {user_display_name}\nMesaj: {user_message}\n\n"
         "Cevabı Türkçe ver. Kısa, net ve karakterinde kal."
     )
