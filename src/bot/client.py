@@ -5,6 +5,7 @@ import logging
 import discord
 
 from src.bot.events import handle_message, handle_voice_state_update
+from src.ai.gemini_client import GeminiClient
 from src.config import Settings
 
 
@@ -15,6 +16,9 @@ class DiscordAIBot(discord.Client):
     def __init__(self, *, intents: discord.Intents, settings: Settings):
         super().__init__(intents=intents)
         self.settings = settings
+        self.ai: GeminiClient | None = None
+        if settings.google_api_key:
+            self.ai = GeminiClient(api_key=settings.google_api_key, model_name=settings.gemini_model)
 
     async def on_ready(self) -> None:
         user = self.user
