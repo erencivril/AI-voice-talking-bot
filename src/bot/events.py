@@ -6,6 +6,7 @@ import re
 
 import discord
 
+from src.admin.commands import handle_owner_command
 from src.bot.permissions import is_owner
 from src.ai.prompt_builder import build_prompt
 
@@ -39,7 +40,16 @@ async def handle_message(bot: discord.Client, message: discord.Message) -> None:
     if not bot.user or message.author.id == bot.user.id:
         return
 
-    should_reply = _is_mentioning_bot(bot, message) or _is_reply_to_bot(bot, message)
+    user_is_owner = is_owner(bot, message.author)
+    is_dm = message.guild is None
+
+    if is_dm and user_is_owner:
+        raw = (message.content or "").strip()
+        if raw.startswith("/"):
+            await handle_owner_command(bot, message)
+            return
+
+    should_reply = (is_dm and user_is_owner) or _is_mentioning_bot(bot, message) or _is_reply_to_bot(bot, message)
     if not should_reply:
         return
 
@@ -53,8 +63,23 @@ async def handle_message(bot: discord.Client, message: discord.Message) -> None:
         return
 
     user_text = _extract_user_message(bot, message)
-    user_is_owner = is_owner(bot, message.author)
     discord_id = str(message.author.id)
+
+    limiter = getattr(bot, "rate_limiter", None)
+    if not user_is_owner and limiter and not limiter.allow(discord_id):
+        await message.reply("Yavaş. (Rate limit)", mention_author=False)
+        return
+
+    if not user_text:
+        user_text = "Selam"
+
+    inj = getattr(bot, "injection_filter", None)
+    if inj:
+        res = inj.filter(user_text)
+        if not res.allowed:
+            await message.reply(res.text_or_reason, mention_author=False)
+            return
+        user_text = res.text_or_reason
 
     try:
         message_count = await db.touch_user(
@@ -81,9 +106,6 @@ async def handle_message(bot: discord.Client, message: discord.Message) -> None:
         reply = "GOOGLE_API_KEY ayarlı değil. Şimdilik konuşamıyorum."
         await message.reply(reply, mention_author=False)
         return
-
-    if not user_text:
-        user_text = "Selam"
 
     memories: list[str] = []
     mem_mgr = getattr(bot, "memory", None)

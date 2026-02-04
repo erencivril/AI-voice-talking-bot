@@ -13,6 +13,16 @@ def _get_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _get_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw.strip())
+    except ValueError:
+        return default
+
+
 @dataclass(frozen=True)
 class Settings:
     discord_token: str
@@ -28,6 +38,9 @@ class Settings:
     enable_voice: bool
 
     memory_extract_every_n_messages: int
+
+    rate_limit_max: int
+    rate_limit_window_seconds: int
 
     brave_api_key: str | None
     serper_api_key: str | None
@@ -62,7 +75,9 @@ def load_settings() -> Settings:
         gemini_model=os.getenv("GEMINI_MODEL", "gemini-1.5-flash").strip() or "gemini-1.5-flash",
         enable_web_search=_get_bool("ENABLE_WEB_SEARCH", False),
         enable_voice=_get_bool("ENABLE_VOICE", False),
-        memory_extract_every_n_messages=int(os.getenv("MEMORY_EXTRACT_EVERY_N_MESSAGES", "10").strip() or "10"),
+        memory_extract_every_n_messages=_get_int("MEMORY_EXTRACT_EVERY_N_MESSAGES", 10),
+        rate_limit_max=_get_int("RATE_LIMIT_MAX", 3),
+        rate_limit_window_seconds=_get_int("RATE_LIMIT_WINDOW_SECONDS", 10),
         brave_api_key=os.getenv("BRAVE_API_KEY") or None,
         serper_api_key=os.getenv("SERPER_API_KEY") or None,
         tavily_api_key=os.getenv("TAVILY_API_KEY") or None,
