@@ -48,6 +48,7 @@ class Settings:
 
     deepgram_api_key: str | None
     elevenlabs_api_key: str | None
+    elevenlabs_voice_id: str | None
 
 
 def load_settings() -> Settings:
@@ -83,4 +84,5 @@ def load_settings() -> Settings:
         tavily_api_key=os.getenv("TAVILY_API_KEY") or None,
         deepgram_api_key=os.getenv("DEEPGRAM_API_KEY") or None,
         elevenlabs_api_key=os.getenv("ELEVENLABS_API_KEY") or None,
+        elevenlabs_voice_id=os.getenv("ELEVENLABS_VOICE_ID") or None,
     )

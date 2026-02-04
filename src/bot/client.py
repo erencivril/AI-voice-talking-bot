@@ -14,6 +14,7 @@ from src.bot.rate_limiter import RateLimiter
 from src.memory.database import Database
 from src.memory.user_memory import UserMemoryManager
 from src.tools.web_search import WebSearch
+from src.voice.voice_client import VoiceManager
 
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,11 @@ class DiscordAIBot(discord.Client):
             brave_api_key=settings.brave_api_key,
             serper_api_key=settings.serper_api_key,
             tavily_api_key=settings.tavily_api_key,
+        )
+        self.voice_manager = VoiceManager(
+            bot=self,
+            elevenlabs_api_key=settings.elevenlabs_api_key,
+            elevenlabs_voice_id=settings.elevenlabs_voice_id,
         )
 
         if settings.google_api_key:

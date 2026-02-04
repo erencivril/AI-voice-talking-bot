@@ -182,6 +182,17 @@ async def handle_message(bot: discord.Client, message: discord.Message) -> None:
 
     await message.reply(reply, mention_author=False)
 
+    # Owner DM -> optionally speak the reply in voice (costly, opt-in).
+    voice_enabled = bool(features.get("voice", False)) if isinstance(features, dict) else False
+    if voice_enabled and is_dm and user_is_owner:
+        voice_manager = getattr(bot, "voice_manager", None)
+        if voice_manager and getattr(bot, "voice_clients", None):
+            try:
+                vc = bot.voice_clients[0]  # type: ignore[index]
+                asyncio.create_task(voice_manager.speak(guild=vc.guild, text=reply))
+            except Exception:
+                logger.exception("voice speak task failed to start")
+
     try:
         await db.add_conversation(
             discord_id=discord_id,
@@ -214,5 +225,35 @@ async def handle_voice_state_update(
     before: discord.VoiceState,
     after: discord.VoiceState,
 ) -> None:
-    _ = (bot, member, before, after)
-    # Faz 5'te doldurulacak. (Şimdilik no-op)
+    settings = getattr(bot, "settings", None)
+    if not settings:
+        return
+
+    features = getattr(bot, "features", {})
+    voice_enabled = bool(features.get("voice", False)) if isinstance(features, dict) else False
+    if not voice_enabled:
+        return
+
+    if not is_owner(bot, member):
+        return
+
+    voice_manager = getattr(bot, "voice_manager", None)
+    if not voice_manager:
+        return
+
+    # Join/move to owner's voice channel
+    if after.channel and isinstance(after.channel, discord.VoiceChannel):
+        try:
+            await voice_manager.join(after.channel)
+            if before.channel is None or before.channel.id != after.channel.id:
+                await voice_manager.speak(guild=after.channel.guild, text=f"Selam patron. {settings.bot_name} hatta.")
+        except Exception:
+            logger.exception("voice join/speak failed")
+        return
+
+    # Owner left voice -> disconnect
+    if before.channel and isinstance(before.channel, discord.VoiceChannel):
+        try:
+            await voice_manager.leave(guild=before.channel.guild)
+        except Exception:
+            logger.exception("voice leave failed")
