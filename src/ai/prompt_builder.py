@@ -31,6 +31,7 @@ def build_prompt(
     user_display_name: str,
     user_message: str,
     is_owner: bool,
+    memories: list[str] | None = None,
 ) -> str:
     prompts = load_prompts()
 
@@ -45,10 +46,13 @@ def build_prompt(
         else ""
     )
 
+    memories_block = "\n".join(memories or []) or "- (yok)"
+
     return (
         f"[SYSTEM]\n{system}\n\n"
         f"[PERSONALITY]\n{personality}\n\n"
         f"{owner_rules}"
+        f"[MEMORIES]\n{memories_block}\n\n"
         f"[USER]\nAd: {user_display_name}\nMesaj: {user_message}\n\n"
         "Cevabı Türkçe ver. Kısa, net ve karakterinde kal."
     )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 
@@ -46,8 +47,35 @@ async def handle_message(bot: discord.Client, message: discord.Message) -> None:
     if not settings:
         return
 
+    db = getattr(bot, "db", None)
+    if not db:
+        await message.reply("DB hazır değil. Biraz sonra dene.", mention_author=False)
+        return
+
     user_text = _extract_user_message(bot, message)
     user_is_owner = is_owner(bot, message.author)
+    discord_id = str(message.author.id)
+
+    try:
+        message_count = await db.touch_user(
+            discord_id=discord_id,
+            username=str(message.author),
+            display_name=getattr(message.author, "display_name", str(message.author)),
+        )
+    except Exception:
+        logger.exception("touch_user failed")
+        message_count = 0
+
+    try:
+        await db.add_conversation(
+            discord_id=discord_id,
+            channel_id=str(message.channel.id) if message.channel else None,
+            message_id=str(message.id),
+            role="user",
+            content=user_text or "",
+        )
+    except Exception:
+        logger.exception("add_conversation(user) failed")
 
     if not getattr(bot, "ai", None):
         reply = "GOOGLE_API_KEY ayarlı değil. Şimdilik konuşamıyorum."
@@ -57,12 +85,21 @@ async def handle_message(bot: discord.Client, message: discord.Message) -> None:
     if not user_text:
         user_text = "Selam"
 
+    memories: list[str] = []
+    mem_mgr = getattr(bot, "memory", None)
+    if mem_mgr:
+        try:
+            memories = await mem_mgr.get_prompt_memories(discord_id=discord_id, limit=5)
+        except Exception:
+            logger.exception("get_prompt_memories failed")
+
     prompt = build_prompt(
         bot_name=settings.bot_name,
         owner_id=settings.discord_owner_id,
         user_display_name=getattr(message.author, "display_name", "kullanıcı"),
         user_message=user_text,
         is_owner=user_is_owner,
+        memories=memories,
     )
 
     try:
@@ -75,6 +112,31 @@ async def handle_message(bot: discord.Client, message: discord.Message) -> None:
         reply = "Cevap üretemedim. (Bence bu da bir cevap.)"
 
     await message.reply(reply, mention_author=False)
+
+    try:
+        await db.add_conversation(
+            discord_id=discord_id,
+            channel_id=str(message.channel.id) if message.channel else None,
+            message_id=None,
+            role="assistant",
+            content=reply,
+        )
+    except Exception:
+        logger.exception("add_conversation(assistant) failed")
+
+    every_n = int(getattr(settings, "memory_extract_every_n_messages", 0) or 0)
+    if mem_mgr and every_n > 0 and message_count > 0 and message_count % every_n == 0:
+        task = asyncio.create_task(
+            mem_mgr.extract_and_store(discord_id=discord_id, source_message_id=str(message.id))
+        )
+
+        def _log_task_result(t: asyncio.Task[object]) -> None:
+            try:
+                t.result()
+            except Exception:
+                logger.exception("memory task failed")
+
+        task.add_done_callback(_log_task_result)
 
 
 async def handle_voice_state_update(
